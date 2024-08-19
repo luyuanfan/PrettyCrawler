@@ -1,8 +1,55 @@
 <!DOCTYPE html>
-
-<html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pretty Scrapper - Home</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #5a5a5a;
+        }
+        form {
+            margin-top: 20px;
+        }
+        input[type="text"], button {
+            padding: 10px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #5c67f2;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #5058e4;
+        }
+    </style>
+</head>
 <body>
-    <h1>Welcome to Pretty Scrapper</h1>
-    <p>This is where your illegal web striping dreams come true!</p>
+    <div class="container">
+        <h1>Welcome to Pretty Scrapper</h1>
+        <p>Enter a URL below to scrape the website:</p>
+        <form action="/scrape" method="POST">
+            <input type="text" name="url" placeholder="Enter URL here..." required>
+            <button type="submit">Scrape Website</button>
+        </form>
+    </div>
 </body>
 </html>
