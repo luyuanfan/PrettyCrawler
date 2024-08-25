@@ -9,28 +9,65 @@ import json
 from django.urls import path
 from django.template.loader import get_template
 from xhtml2pdf import pisa
+from django.core.validators import URLValidator
+from django.core.exceptions import ValidationError
 
 def home(request):
     return render(request, 'home.html')
 
-def scraper(request):
-    if request.method == 'POST':
-        url = request.POST.get('url')
-        req = requests.get(url)
-        soup = BeautifulSoup(r.content, 'lxml')
+def validate_url(url):
+    '''
+    This function validates user's input URL.
+    If the URL is not valid, it should notify the user. 
+    '''
+    validate = URLValidator(verify_exists=True)
 
-        title = soup.title.string
-        headings = []
-        for heading in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
-            headings.append(heading.text.strip())
-        paragraphs = []
-        for paragraph in soup.find_all('p'):
-            paragraphs.append(paragraph.text.strip())
-        context = {
-            'title': title,
-            'headings': headings,
-            'paragraphs': paragraphs,
-        }
+    # TODO: connect to frontend and notify user. 
+    if url:
+        try:
+            validate(value)
+        except ValidationError as e:
+            return False, str(e)
+        return True, 'URL exists.'
+    return False, 'Please enter an URL.'
+
+def parse_page_content(page):
+    '''
+    This function parses page content with BeautifulSoup. 
+    It returns a JSON file. 
+    '''
+    soup = BeautifulSoup(page.content, 'html5lib')
+
+    # TODO: check if soup is valid. 
+
+    title = soup.title.string
+
+    headings = []
+    for heading in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+        headings.append(heading.text.strip())
+
+    paragraphs = []
+    for paragraph in soup.find_all('p'):
+        paragraphs.append(paragraph.text.strip())
+    context = {
+        'title': title,
+        'headings': headings,
+        'paragraphs': paragraphs,
+    }
+    return context
+
+def scraper(request):
+
+    if request.method == 'POST':
+
+        # Get user's input, check if it's valid, and submit a HTTP request. 
+        url = request.POST.get('input_url')
+        validate_url(url)
+        page = requests.get(url)
+
+        # Use BeautifulSoup to parse the page content. 
+        context = parse_page_content(page)
+
         request.session['scraped_data'] = context
         return render(request, 'result.html', context)
     else:

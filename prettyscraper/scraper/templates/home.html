@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pretty Scrapper - Home</title>
-    <style>
+    <!-- <style>
         body {
             font-family: Arial, sans-serif;
             margin: 40px;
@@ -40,14 +40,15 @@
         button:hover {
             background-color: #5058e4;
         }
-    </style>
+    </style> -->
 </head>
 <body>
     <div class="container">
         <h1>Welcome to Pretty Scrapper</h1>
-        <p>Enter a URL below to scrape the website:</p>
-        <form action="/scrape" method="POST">
-            <input type="text" name="url" placeholder="Enter URL here..." required>
+        <p>Enter a URL below to download its content!</p>
+        <form method="POST" action="/scrape">
+            {% csrf_token %}
+            <input type="text" name="input_url" placeholder="Put a link here..." required>
             <button type="submit">Scrape Website</button>
         </form>
     </div>
