@@ -1,31 +1,36 @@
-from django.shortcuts import render
+# Imports from Django libraries. 
+from django.core.validators import URLValidator
+from django.core.exceptions import ValidationError
+from django.shortcuts import render, redirect
+from django.http import HttpResponse
+from django.contrib import messages
+from django.urls import path
+from django.template.loader import get_template
 import requests
+import csv
+import json
 from bs4 import BeautifulSoup
 from io import BytesIO
 from reportlab.pdfgen import canvas
-from django.http import HttpResponse
-import csv
-import json
-from django.urls import path
-from django.template.loader import get_template
 from xhtml2pdf import pisa
-from django.core.validators import URLValidator
-from django.core.exceptions import ValidationError
 
 def home(request):
+    '''
+    This is the default homepage. 
+    '''
     return render(request, 'home.html')
-
+        
 def validate_url(url):
     '''
     This function validates user's input URL.
     If the URL is not valid, it should notify the user. 
     '''
-    validate = URLValidator(verify_exists=True)
+    validate = URLValidator()
 
     # TODO: connect to frontend and notify user. 
     if url:
         try:
-            validate(value)
+            validate(url)
         except ValidationError as e:
             return False, str(e)
         return True, 'URL exists.'
@@ -34,11 +39,14 @@ def validate_url(url):
 def parse_page_content(page):
     '''
     This function parses page content with BeautifulSoup. 
-    It returns a JSON file. 
+    It returns a JSON file? 
     '''
     soup = BeautifulSoup(page.content, 'html5lib')
-
     # TODO: check if soup is valid. 
+    if not soup:
+        error_message = "ERROR: Failed to parse page content."
+        print(error_message)
+        messages.error(request, error_message)
 
     title = soup.title.string
 
@@ -49,26 +57,52 @@ def parse_page_content(page):
     paragraphs = []
     for paragraph in soup.find_all('p'):
         paragraphs.append(paragraph.text.strip())
+
+    hrefs = []
+    for href in soup.find_all('href'):
+        hrefs.append(href.text.strip())
+
     context = {
         'title': title,
         'headings': headings,
         'paragraphs': paragraphs,
+        'hrefs' : hrefs,
     }
     return context
 
-def scraper(request):
+def get_page_content_bundle(url, depth):
+    if depth == 0:
+        return []
 
+    page = requests.get(url)
+    if not page:
+        error_message = "ERROR: Failed to get a response."
+        print(error_message)
+        messages.error(request, error_message)
+        return redirect('home')
+
+    # Use BeautifulSoup to parse the page content. 
+    context = parse_page_content(page)
+    for link in context.hrefs:
+        
+
+def execute(request):
     if request.method == 'POST':
 
         # Get user's input, check if it's valid, and submit a HTTP request. 
-        url = request.POST.get('input_url')
-        validate_url(url)
-        page = requests.get(url)
+        url, depth = request.POST.get('input_url', 'depth')
+        is_valid, error_message = validate_url(url)
+        if not is_valid:
+            print(f'ERROR: URL is not valid: {error_message}')
+            messages.error(request, error_message)
+            # TODO: Notify user that this URL is not valid.
+            return redirect('home')
+        
+        bundle = get_page_content_bundle(url, depth)
 
-        # Use BeautifulSoup to parse the page content. 
-        context = parse_page_content(page)
-
+        print(f"\nAfter parse_page_content function: HTML content is:\n {context}\n")
         request.session['scraped_data'] = context
+
         return render(request, 'result.html', context)
     else:
         return render(request, 'home.html')

@@ -1,5 +1,6 @@
 gunicorn
 Django
+django-extensions
 requests
 beautifulsoup4
 reportlab
