@@ -48,24 +48,28 @@ def parse_page_content(page):
         print(error_message)
         messages.error(request, error_message)
 
-    title = soup.title.string
+    print(f'Printing out soup content: {soup.string}')
 
-    headings = []
-    for heading in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
-        headings.append(heading.text.strip())
+    # title = soup.title.string
 
-    paragraphs = []
-    for paragraph in soup.find_all('p'):
-        paragraphs.append(paragraph.text.strip())
+    # headings = []
+    # for heading in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+    #     headings.append(heading.text.strip())
+
+    # paragraphs = []
+    # for paragraph in soup.find_all('p'):
+    #     paragraphs.append(paragraph.text.strip())
 
     hrefs = []
-    for href in soup.find_all('href'):
-        hrefs.append(href.text.strip())
-
+    for href in soup.find_all('a', href=True):
+        hrefs.append(a['href'].text.strip())
+    
+    print(f'Found all hyperlinks: {hrefs}')
+    
     context = {
-        'title': title,
-        'headings': headings,
-        'paragraphs': paragraphs,
+        # 'title': title,
+        # 'headings': headings,
+        # 'paragraphs': paragraphs,
         'hrefs' : hrefs,
     }
     return context
@@ -76,21 +80,24 @@ def get_page_content_bundle(url, depth):
 
     page = requests.get(url)
     if not page:
-        error_message = "ERROR: Failed to get a response."
+        error_message = "ERROR: Failed to get network response."
         print(error_message)
         messages.error(request, error_message)
         return redirect('home')
 
     # Use BeautifulSoup to parse the page content. 
     context = parse_page_content(page)
-    for link in context.hrefs:
+    # for link in context.hrefs:
+    print(f'Back in get_page_content_bundle')
         
 
 def execute(request):
     if request.method == 'POST':
 
         # Get user's input, check if it's valid, and submit a HTTP request. 
-        url, depth = request.POST.get('input_url', 'depth')
+        url = request.POST.get('input_url', None)
+        depth = request.POST.get('depth', 1) # Depth is number, ensured at frontend. 
+
         is_valid, error_message = validate_url(url)
         if not is_valid:
             print(f'ERROR: URL is not valid: {error_message}')
@@ -100,7 +107,7 @@ def execute(request):
         
         bundle = get_page_content_bundle(url, depth)
 
-        print(f"\nAfter parse_page_content function: HTML content is:\n {context}\n")
+        # print(f"\nAfter parse_page_content function: HTML content is:\n {context}\n")
         request.session['scraped_data'] = context
 
         return render(request, 'result.html', context)
