@@ -50,4 +50,5 @@ EXPOSE 8000
 
 # Run the application.
 # CMD gunicorn '.venv.lib.python3.12.site-packages.asgiref.wsgi' --bind=0.0.0.0:8000
-CMD python manage.py runserver
+# CMD python manage.py runserver
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
