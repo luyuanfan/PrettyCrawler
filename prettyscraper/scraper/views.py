@@ -13,6 +13,7 @@ from django.core.exceptions import ValidationError
 from django.core.files import File
 from django.core.files.base import ContentFile
 from django.http import HttpResponse
+from django.http import JsonResponse
 from django.contrib import messages
 from django.urls import path
 from django.template.loader import get_template
@@ -22,13 +23,30 @@ from xhtml2pdf import pisa
 import requests
 
 # Imports from our models.
-from .models import Page#, Link
+from .models import Page, User
 
 def home(request):
     '''
-    This is the default homepage. 
+    Default homepage. 
     '''
     return render(request, 'home.html')
+
+def verify_user_id(request):
+    '''
+    Verifies the ID associated with the user.
+    The ID is stored in user's browser's local storage.
+    '''
+    user_id = request.POST.get('scraper_user_id')
+    print(f'In verify_user_id, we got the ID {user_id}')
+    if not user_id:
+        return JsonResponse({'status': 'error', 'message': 'No User ID provided'})
+
+    # Create a new User object associate with ID. 
+    user = User.objects.filter(username=user_id).exists()
+    if not user:
+        user = User.objects.create_user(user_id)
+
+    return JsonResponse({'status': 'success', 'message': 'User ID verified', 'user_id': user_id})
         
 def validate_url(url):
     '''
@@ -46,7 +64,7 @@ def validate_url(url):
         return False, str(e)
     return True, 'URL exists.'
 
-def get_page_content_bundle(request, url, max_depth, curr_depth, curr_path):
+def get_page_content(request, url, max_depth, curr_depth):
     '''
     This function recursively get page content from a URL.
     It should collect to all URL present at current page and traverse to those links.
@@ -109,7 +127,7 @@ def get_page_content_bundle(request, url, max_depth, curr_depth, curr_path):
         # Recursively call this function with new URLs. 
         for link in hrefs:
             if link:
-                get_page_content_bundle(request, link, max_depth, curr_depth + 1)
+                get_page_content(request, link, max_depth, curr_depth + 1)
 
     # # Construct file with path. 
     # page_content = {
@@ -134,7 +152,7 @@ def main(request):
         url = request.POST.get('input_url', None)
         max_depth = int(request.POST.get('depth', 1))
 
-        bundle = get_page_content_bundle(request, url, max_depth, 1, curr_path)
+        bundle = get_page_content(request, url, max_depth, 1)
         return render(request, 'result.html', bundle)
 
     else:
@@ -157,14 +175,15 @@ def download(request):
 
         if download_type == 'pdf':
             return generate_pdf(context)
-        elif download_type = 'csv':
+        elif download_type == 'csv':
             return generate_csv(context)
-        elif download_type = 'json':
+        elif download_type == 'json':
             return generate_json(context)
         else:
             return render(request, 'home.html')
 
     else:
+
         return render(request, 'home.html')
 
     # def add_to_zip(page, path=''):
@@ -193,6 +212,9 @@ def download(request):
     return response
 
 def generate_pdf(context):
+    '''
+    Generates... 
+    '''
 
     template_path = 'result.html'
     template = get_template(template_path)
@@ -207,6 +229,9 @@ def generate_pdf(context):
     return response
 
 def generate_csv(context):
+    '''
+    Generates... 
+    '''
 
     response = HttpResponse(content_type='text/csv')
     filename = f"{context.get('title', 'download')}.csv"
@@ -219,41 +244,56 @@ def generate_csv(context):
     return response
 
 def generate_json(context):
-    
+    '''
+    Generates... 
+    '''
+
     response = HttpResponse(content_type='application/json')
     filename = f"{context.get('title', 'download')}.json"
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     json.dump(context, response, indent=4)
     return response
 
-    # if 'scraped_data' in request.session:
-    #     context = request.session['scraped_data']
-    #     response = HttpResponse(content_type='')
-    #     if request.POST['download_type'] == 'pdf':
-    #         template_path = 'result.html'
-    #         template = get_template(template_path)
-    #         html = template.render(context)
-    #         response = HttpResponse(content_type='application/pdf')
-    #         filename = f"{context['title']}.pdf"
-    #         response['Content-Disposition'] = f'attachment; filename="{filename}"'
-    #         buffer = BytesIO()
-    #         pisa_status = pisa.CreatePDF(html, dest=response, encoding='utf-8')
-    #         if pisa_status.err:
-    #             return HttpResponse('PDF generation failed')
-    #     elif request.POST['download_type'] == 'csv':
-    #         response = HttpResponse(content_type='text/csv')
-    #         filename = f"{context['title']}.csv"
-    #         response['Content-Disposition'] = f'attachment; filename="{filename}"'
-    #         writer = csv.writer(response)
-    #         writer.writerow(['Title', 'Headings', 'Paragraphs'])
-    #         rows = zip([context['title']], context['headings'], context['paragraphs'])
-    #         for row in rows:
-    #             writer.writerow(row)
-    #     elif request.POST['download_type'] == 'json':
-    #         response = HttpResponse(content_type='application/json')
-    #         filename = f"{context['title']}.json"
-    #         response['Content-Disposition'] = f'attachment; filename="{filename}"'
-    #         json.dump(context, response, indent=4)
-    #     return response
-    # else:
-    #     return render(request, 'home.html')
+
+def zip_file(context):
+    '''
+    Compresses PDF/CSV/JSON file folders into a downloadable zip.
+    Args:
+     @
+    Returns:
+     @ 
+    '''
+    pass
+
+def outdated(request):
+    if 'scraped_data' in request.session:
+        context = request.session['scraped_data']
+        response = HttpResponse(content_type='')
+        if request.POST['download_type'] == 'pdf':
+            template_path = 'result.html'
+            template = get_template(template_path)
+            html = template.render(context)
+            response = HttpResponse(content_type='application/pdf')
+            filename = f"{context['title']}.pdf"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            buffer = BytesIO()
+            pisa_status = pisa.CreatePDF(html, dest=response, encoding='utf-8')
+            if pisa_status.err:
+                return HttpResponse('PDF generation failed')
+        elif request.POST['download_type'] == 'csv':
+            response = HttpResponse(content_type='text/csv')
+            filename = f"{context['title']}.csv"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            writer = csv.writer(response)
+            writer.writerow(['Title', 'Headings', 'Paragraphs'])
+            rows = zip([context['title']], context['headings'], context['paragraphs'])
+            for row in rows:
+                writer.writerow(row)
+        elif request.POST['download_type'] == 'json':
+            response = HttpResponse(content_type='application/json')
+            filename = f"{context['title']}.json"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            json.dump(context, response, indent=4)
+        return response
+    else:
+        return render(request, 'home.html')

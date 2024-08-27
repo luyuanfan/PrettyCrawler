@@ -42,6 +42,8 @@ INSTALLED_APPS = [
     "scraper",
 ]
 
+# They are for globally altering Django’s input or output.
+# Each middleware component is responsible for doing some specific function.
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
