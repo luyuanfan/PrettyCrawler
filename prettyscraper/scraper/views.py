@@ -1,21 +1,28 @@
+# Standard Python library imports
+import csv
+import json
+import os
+from io import BytesIO
+from pathlib import Path
+import zipfile
+
 # Imports from Django libraries. 
+from django.shortcuts import render, redirect
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
-from django.shortcuts import render, redirect
+from django.core.files import File
+from django.core.files.base import ContentFile
 from django.http import HttpResponse
 from django.contrib import messages
 from django.urls import path
 from django.template.loader import get_template
-# Import from other libraries
-import requests
-import csv
-import json
 from bs4 import BeautifulSoup
-from io import BytesIO
 from reportlab.pdfgen import canvas
 from xhtml2pdf import pisa
+import requests
+
 # Imports from our models.
-from .models import Page, Link
+from .models import Page#, Link
 
 def home(request):
     '''
@@ -39,7 +46,7 @@ def validate_url(url):
         return False, str(e)
     return True, 'URL exists.'
 
-def get_page_content_bundle(request, url, max_depth, curr_depth):
+def get_page_content_bundle(request, url, max_depth, curr_depth, curr_path):
     '''
     This function recursively get page content from a URL.
     It should collect to all URL present at current page and traverse to those links.
@@ -48,6 +55,7 @@ def get_page_content_bundle(request, url, max_depth, curr_depth):
     TODO: Also rememeber to check max depth reached.
     TODO: Notify user that this URL is not valid on frontend. We can do all this later.
     '''
+
     if curr_depth > max_depth: return
 
     # Check if URL is valid. 
@@ -58,38 +66,63 @@ def get_page_content_bundle(request, url, max_depth, curr_depth):
         return
 
     # Check if page is valid. 
-    page = requests.get(url)
-    if not page:
+    response = requests.get(url)
+    if not response:
         error_message = "ERROR: Failed to get network response."
         print(error_message)
         messages.error(request, error_message)
         return
 
-    # Use BeautifulSoup to parse page.
-    soup = BeautifulSoup(page.content, 'html5lib')
+    # Use BeautifulSoup to parse response.
+    soup = BeautifulSoup(response.content, 'html.parser')
     if not soup:
         error_message = "ERROR: Failed to parse page content."
         print(error_message)
         messages.error(request, error_message)
 
-    # Find all URLs on page. 
-    hrefs = []
-    for a in soup.find_all('a', href=True):
-        hrefs.append(a['href'])
-    
-    # Recursively call this function with new URLs. 
-    for link in hrefs:
-        if link:
-            get_page_content_bundle(request, link, max_depth, curr_depth + 1)
+    print(f'Soup is {soup}')
+    # Create and construct safe directory name from page title. 
+    title = soup.find('title').string if soup.title else url
+    print(f"Before converting title to safe title, it is: {title}")
+    file_name = title.replace('/', '_').replace(' ','_').replace(':', '_')
+    print(f"After converting title to safe title, it is: {title}")
+    # new_dir_path = os.path.join(curr_path, file_name)
+    # try:
+    #     os.makedir(new_dir_path, exist_ok=True)
+    # except OSError as e: print(e)
 
-    # Construct JSON file to store current page content.
-    page_content = {
-        'main' : soup,
-        'hrefs' : hrefs,
-    }
+    page = Page.objects.create(
+        user=user,
+        url=url,
+        title=title,
+        content=str(soup),
+        parent=parent
+    )
+
+    # If curr_depth indicates we should go to the next level. 
+    if curr_depth < max_depth:
+        # Find all URLs on page. 
+        hrefs = []
+        for a in soup.find_all('a', href=True):
+            hrefs.append(a['href'])
+        
+        # Recursively call this function with new URLs. 
+        for link in hrefs:
+            if link:
+                get_page_content_bundle(request, link, max_depth, curr_depth + 1)
+
+    # # Construct file with path. 
+    # page_content = {
+    #     'title' : title,
+    #     'main' : soup,
+    #     'hrefs' : hrefs,
+    # }
+
+    # file = ContentFile(page_content, name=page_content.title)
+    # Page.objects.create(file=file)
 
     print(f'Soup is {soup}, with a list of links {hrefs}')
-    return page_content
+    # return page_content
         
 def main(request):
     '''
@@ -98,14 +131,13 @@ def main(request):
     TODO: For the result page (or maybe just a new section on home page, we need an scrape another button)
     '''
     if request.method == 'POST':
-
         url = request.POST.get('input_url', None)
         max_depth = int(request.POST.get('depth', 1))
-        bundle = get_page_content_bundle(request, url, max_depth, 1)
+
+        bundle = get_page_content_bundle(request, url, max_depth, 1, curr_path)
         return render(request, 'result.html', bundle)
 
     else:
-
         return render(request, 'home.html')
         
 def download_file(request):
