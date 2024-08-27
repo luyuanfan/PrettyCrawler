@@ -1,13 +1,33 @@
+{% load static %}
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pretty Scraper - Home</title>
+    <style>
+        body {
+            background-color: #e5e1ca;
+        }
+        .container {
+            margin-top: 5%;
+            text-align: center;
+        }
+        img.logo {
+            width: 60%;
+            max-width: 600px;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
-        <h1>Scraper</h1>
+        <!-- <h1>Scraper</h1> -->
+        <!-- <img src="/static/scraper_logo.png"> -->
+        <img src="{% static 'scraper_logo.png' %}" class="logo">
         <p>Enter a URL below to download its content!</p>
         <p>You might also want to download webpages linked to the one you entered. Specify a depth.</p>
         <form method="POST" action="/scraper/scrape/">
@@ -17,19 +37,19 @@
             <input type="number" name="depth" placeholder="depth">
             <button type="submit">Scrape Website</button>
         </form>
-    </div>
-    <br>
-    <div>
-        <form method="POST" action="/scraper/download/">
-            {% csrf_token %}
-            <label for="download_type">Choose a download format:</label>
-            <select name="download_type" id="download_type">
-                <option value="pdf">PDF</option>
-                <option value="csv">CSV</option>
-                <option value="json">JSON</option>
-            </select>
-            <button type="submit">Download</button>
-        </form>
+        <br>
+        <div>
+            <form method="POST" action="/scraper/download/">
+                {% csrf_token %}
+                <label for="download_type">Choose a download format:</label>
+                <select name="download_type" id="download_type">
+                    <option value="pdf">PDF</option>
+                    <option value="csv">CSV</option>
+                    <option value="json">JSON</option>
+                </select>
+                <button type="submit">Download</button>
+            </form>
+        </div>
     </div>
 </body>
 </html>

@@ -140,7 +140,7 @@ def main(request):
     else:
         return render(request, 'home.html')
         
-def download_file(request, root_page_id):
+def download_file(request):
     '''
     A django view to zip files in directory and send it as downloadable response to the browser.
     Args:
