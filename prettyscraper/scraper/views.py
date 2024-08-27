@@ -140,35 +140,70 @@ def main(request):
     else:
         return render(request, 'home.html')
         
-def download_file(request):
-    if 'scraped_data' in request.session:
-        context = request.session['scraped_data']
-        response = HttpResponse(content_type='')
-        if request.POST['download_type'] == 'pdf':
-            template_path = 'result.html'
-            template = get_template(template_path)
-            html = template.render(context)
-            response = HttpResponse(content_type='application/pdf')
-            filename = f"{context['title']}.pdf"
-            response['Content-Disposition'] = f'attachment; filename="{filename}"'
-            buffer = BytesIO()
-            pisa_status = pisa.CreatePDF(html, dest=response, encoding='utf-8')
-            if pisa_status.err:
-                return HttpResponse('PDF generation failed')
-        elif request.POST['download_type'] == 'csv':
-            response = HttpResponse(content_type='text/csv')
-            filename = f"{context['title']}.csv"
-            response['Content-Disposition'] = f'attachment; filename="{filename}"'
-            writer = csv.writer(response)
-            writer.writerow(['Title', 'Headings', 'Paragraphs'])
-            rows = zip([context['title']], context['headings'], context['paragraphs'])
-            for row in rows:
-                writer.writerow(row)
-        elif request.POST['download_type'] == 'json':
-            response = HttpResponse(content_type='application/json')
-            filename = f"{context['title']}.json"
-            response['Content-Disposition'] = f'attachment; filename="{filename}"'
-            json.dump(context, response, indent=4)
-        return response
-    else:
-        return render(request, 'home.html')
+def download_file(request, root_page_id):
+    '''
+    A django view to zip files in directory and send it as downloadable response to the browser.
+    Args:
+      @request: Django request object
+      @file_name: Name of the directory to be zipped
+    Returns:
+      A downloadable Http response
+    '''
+
+    def add_to_zip(page, path=''):
+        filename = f'{path}{page.title}.html'
+        archive.writestr(filename, page.content)
+        for child in page.linked_pages.all():
+            child_path = f'{path}{page.title}/'
+            add_to_zip(child, path=child_path)
+        
+    root_page = Page.objects.get(id=root_page_id, user=request.user)
+
+    byte_data = io.BytesIO()
+    pisa_status = pisa.CreatePDF(html, dest=response, encoding='utf-8')
+    if pisa_status.err:
+        print(f'ERROR: PDF generation failed')
+        return HttpResponse('ERROR: PDF generation failed')
+    zipfile = zipfile.ZipFile(byte_data, 'w')
+        
+    add_to_zip(root_page)
+
+    # byte_data.seek(0)
+
+    response = HttpResponse(byte_data.getvalue(), content_type='application/zip')
+    response['Content-Disposition'] = f'attachment; filename="{root_page.title}.zip"'
+
+    return response
+
+
+    # if 'scraped_data' in request.session:
+    #     context = request.session['scraped_data']
+    #     response = HttpResponse(content_type='')
+    #     if request.POST['download_type'] == 'pdf':
+    #         template_path = 'result.html'
+    #         template = get_template(template_path)
+    #         html = template.render(context)
+    #         response = HttpResponse(content_type='application/pdf')
+    #         filename = f"{context['title']}.pdf"
+    #         response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    #         buffer = BytesIO()
+    #         pisa_status = pisa.CreatePDF(html, dest=response, encoding='utf-8')
+    #         if pisa_status.err:
+    #             return HttpResponse('PDF generation failed')
+    #     elif request.POST['download_type'] == 'csv':
+    #         response = HttpResponse(content_type='text/csv')
+    #         filename = f"{context['title']}.csv"
+    #         response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    #         writer = csv.writer(response)
+    #         writer.writerow(['Title', 'Headings', 'Paragraphs'])
+    #         rows = zip([context['title']], context['headings'], context['paragraphs'])
+    #         for row in rows:
+    #             writer.writerow(row)
+    #     elif request.POST['download_type'] == 'json':
+    #         response = HttpResponse(content_type='application/json')
+    #         filename = f"{context['title']}.json"
+    #         response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    #         json.dump(context, response, indent=4)
+    #     return response
+    # else:
+    #     return render(request, 'home.html')

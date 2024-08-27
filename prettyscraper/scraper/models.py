@@ -13,8 +13,8 @@ class Page(models.Model):
     parent = models.ForeignKey('self', related_name='linked_pages', on_delete=models.CASCADE)
 
     def __str__(self):
-        return self.title
-
+        return f'{self.title} ({self.url})'
+        
 # class Link(models.Model):
 #     src = models.ForeignKey(Page, on_delete=models.CASCADE)
 #     dst = models.ForeignKey(Page, on_delete=models.CASCADE)
