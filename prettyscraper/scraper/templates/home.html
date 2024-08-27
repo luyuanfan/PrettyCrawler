@@ -25,7 +25,7 @@
 </head>
 <body>
     <div class="container">
-        <!-- <h1>Scraper</h1> -->
+        <h1>Scraper</h1>
         <!-- <img src="/static/scraper_logo.png"> -->
         <img src="{% static 'scraper_logo.png' %}" class="logo">
         <p>Enter a URL below to download its content!</p>
@@ -33,7 +33,7 @@
         <form method="POST" action="/scraper/scrape/">
             {% csrf_token %}
             <!-- <input type="text" name="input_url" placeholder="Put a link here..." required> -->
-            <input type="text" name="input_url" placeholder="Put a link here...">
+            <input type="text" name="input_url" placeholder="Put a link here..." required>
             <input type="number" name="depth" placeholder="depth">
             <button type="submit">Scrape Website</button>
         </form>
