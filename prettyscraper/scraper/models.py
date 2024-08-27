@@ -10,6 +10,7 @@ class Page(models.Model):
     user = models.ForeignKey(User, null=True, blank=True, on_delete=models.CASCADE)
     url = models.URLField(unique=False)
     title = models.CharField(max_length=255)
+    filename = models.CharField(max_length=255)
     content = models.FileField()
     uploaded_at = models.DateTimeField(auto_now_add=True)
     parent = models.ForeignKey('self', related_name='linked_pages', on_delete=models.CASCADE)

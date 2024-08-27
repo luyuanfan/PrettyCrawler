@@ -15,15 +15,18 @@ from django.core.files.base import ContentFile
 from django.http import HttpResponse
 from django.http import JsonResponse
 from django.contrib import messages
+from django.contrib.auth.models import User
 from django.urls import path
 from django.template.loader import get_template
+
+# Imports from elsewhere
 from bs4 import BeautifulSoup
 from reportlab.pdfgen import canvas
 from xhtml2pdf import pisa
 import requests
 
 # Imports from our models.
-from .models import Page, User
+from .models import Page
 
 def home(request):
     '''
@@ -36,17 +39,22 @@ def verify_user_id(request):
     Verifies the ID associated with the user.
     The ID is stored in user's browser's local storage.
     '''
+
+    # Get user ID. 
     user_id = request.POST.get('scraper_user_id')
     print(f'In verify_user_id, we got the ID {user_id}')
     if not user_id:
         return JsonResponse({'status': 'error', 'message': 'No User ID provided'})
 
-    # Create a new User object associate with ID. 
-    user = User.objects.filter(username=user_id).exists()
-    if not user:
-        user = User.objects.create_user(user_id)
-
-    return JsonResponse({'status': 'success', 'message': 'User ID verified', 'user_id': user_id})
+    # Create a User object associate with ID if it does not already exist.
+    if not User.objects.filter(username=user_id).exists():
+        try:
+            User.objects.create_user(username-user_id)
+            return JsonResponse({'status': 'success', 'message': 'User created', 'user_id': user_id})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': e})
+    else:
+        return JsonResponse({'status': 'success', 'message': 'User already exists', 'user_id': user_id})
         
 def validate_url(url):
     '''
@@ -64,18 +72,15 @@ def validate_url(url):
         return False, str(e)
     return True, 'URL exists.'
 
-def get_page_content(request, url, max_depth, curr_depth):
-    '''
-    This function recursively get page content from a URL.
-    It should collect to all URL present at current page and traverse to those links.
-    Later I want to store them in a structured thing.... But now we can just append. 
-    TODO: Can we add a detect add functionality, so that we rule out those links.
-    TODO: Also rememeber to check max depth reached.
-    TODO: Notify user that this URL is not valid on frontend. We can do all this later.
-    '''
 
-    if curr_depth > max_depth: return
-
+def get_and_store_page_content(request, url, parent=None):
+    '''
+    Creates Page objects that represents content on one webpage.
+    Args:
+      @
+    Returns:
+      @ 
+    '''
     # Check if URL is valid. 
     is_valid, error_message = validate_url(url)
     if not is_valid:
@@ -98,24 +103,36 @@ def get_page_content(request, url, max_depth, curr_depth):
         print(error_message)
         messages.error(request, error_message)
 
-    print(f'Soup is {soup}')
     # Create and construct safe directory name from page title. 
     title = soup.find('title').string if soup.title else url
     print(f"Before converting title to safe title, it is: {title}")
     file_name = title.replace('/', '_').replace(' ','_').replace(':', '_')
     print(f"After converting title to safe title, it is: {title}")
-    # new_dir_path = os.path.join(curr_path, file_name)
-    # try:
-    #     os.makedir(new_dir_path, exist_ok=True)
-    # except OSError as e: print(e)
 
     page = Page.objects.create(
-        user=user,
+        user=request.user,
         url=url,
         title=title,
+        filename = file_name,
         content=str(soup),
         parent=parent
     )
+
+    return page
+
+def get_page_content(request, url, max_depth, curr_depth):
+    '''
+    This function recursively get page content from a URL.
+    It should collect to all URL present a current page and traverse to those links.
+    Later I want to store them in a structured thing.... But now we can just append. 
+    TODO: Can we add a detect add functionality, so that we rule out those links.
+    TODO: Also rememeber to check max depth reached.
+    TODO: Notify user that this URL is not valid on frontend. We can do all this later.
+    '''
+    if curr_depth == 1 and 
+    if curr_depth > max_depth: return
+
+    page = get_and_store_page_content(request, url, parent)
 
     # If curr_depth indicates we should go to the next level. 
     if curr_depth < max_depth:
@@ -186,6 +203,87 @@ def download(request):
 
         return render(request, 'home.html')
 
+    response = HttpResponse(byte_data.getvalue(), content_type='application/zip')
+    response['Content-Disposition'] = f'attachment; filename="{root_page.title}.zip"'
+
+    return response
+
+def generate_pdf(context):
+    '''
+    Generates PDF download type.
+    Args: 
+      @ context: files
+    Returns:
+      @ response: 
+    '''
+
+    template_path = 'result.html'
+    template = get_template(template_path)
+    html = template.render(context)
+    response = HttpResponse(content_type='application/pdf')
+    filename = f"{context.get('title', 'download')}.pdf"
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    buffer = BytesIO()
+    pisa_status = pisa.CreatePDF(html, dest=response, encoding='utf-8')
+    if pisa_status.err:
+        return HttpResponse('PDF generation failed')
+    return response
+
+def generate_csv(context):
+    '''
+    Generates CSV download type.
+    Args: 
+      @ context: files
+    Returns:
+      @ response: 
+    '''
+    filename = f"{context.get('title', 'download')}.csv"
+
+    response = HttpResponse(
+        content_type='text/csv',
+        headers = {'Content-Disposition' : 'attachment; filename = {filename}'},
+    )
+
+    writer = csv.writer(response)
+    writer.writerow(['Title', 'Content', 'Links'])
+    rows = zip([context.get('title', 'N/A')], context.get('content', []), context.get('links', []))
+
+    for row in rows:
+        writer.writerow(row)
+    
+    return response
+
+def generate_json(context):
+    '''
+    Generates JSON download type. 
+    Args: 
+      @ context: files
+    Returns:
+      @ response: 
+    '''
+
+    response = HttpResponse(content_type='application/json')
+    filename = f"{context.get('title', 'download')}.json"
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    json.dump(context, response, indent=4)
+    return response
+
+
+def download_zip(file_name):
+    '''
+    Compresses PDF/CSV/JSON file folders into a downloadable zip.
+    Args:
+     @
+    Returns:
+     @ 
+    '''
+    pass
+    file_path = '<path>/' + file_name
+    fsock = open(file_name_with_path,"rb")
+    response = HttpResponse(fsock, content_type='application/zip')
+    response['Content-Disposition'] = 'attachment; filename=myfile.zip'
+    return response
+
     # def add_to_zip(page, path=''):
     #     filename = f'{path}{page.title}.html'
     #     archive.writestr(filename, page.content)
@@ -205,95 +303,3 @@ def download(request):
     # add_to_zip(root_page)
 
     # byte_data.seek(0)
-
-    response = HttpResponse(byte_data.getvalue(), content_type='application/zip')
-    response['Content-Disposition'] = f'attachment; filename="{root_page.title}.zip"'
-
-    return response
-
-def generate_pdf(context):
-    '''
-    Generates... 
-    '''
-
-    template_path = 'result.html'
-    template = get_template(template_path)
-    html = template.render(context)
-    response = HttpResponse(content_type='application/pdf')
-    filename = f"{context.get('title', 'download')}.pdf"
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
-    buffer = BytesIO()
-    pisa_status = pisa.CreatePDF(html, dest=response, encoding='utf-8')
-    if pisa_status.err:
-        return HttpResponse('PDF generation failed')
-    return response
-
-def generate_csv(context):
-    '''
-    Generates... 
-    '''
-
-    response = HttpResponse(content_type='text/csv')
-    filename = f"{context.get('title', 'download')}.csv"
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
-    writer = csv.writer(response)
-    writer.writerow(['Title', 'Headings', 'Paragraphs'])
-    rows = zip([context.get('title', 'N/A')], context.get('headings', []), context.get('paragraphs', []))
-    for row in rows:
-        writer.writerow(row)
-    return response
-
-def generate_json(context):
-    '''
-    Generates... 
-    '''
-
-    response = HttpResponse(content_type='application/json')
-    filename = f"{context.get('title', 'download')}.json"
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
-    json.dump(context, response, indent=4)
-    return response
-
-
-def zip_file(context):
-    '''
-    Compresses PDF/CSV/JSON file folders into a downloadable zip.
-    Args:
-     @
-    Returns:
-     @ 
-    '''
-    pass
-
-def outdated(request):
-    if 'scraped_data' in request.session:
-        context = request.session['scraped_data']
-        response = HttpResponse(content_type='')
-        if request.POST['download_type'] == 'pdf':
-            template_path = 'result.html'
-            template = get_template(template_path)
-            html = template.render(context)
-            response = HttpResponse(content_type='application/pdf')
-            filename = f"{context['title']}.pdf"
-            response['Content-Disposition'] = f'attachment; filename="{filename}"'
-            buffer = BytesIO()
-            pisa_status = pisa.CreatePDF(html, dest=response, encoding='utf-8')
-            if pisa_status.err:
-                return HttpResponse('PDF generation failed')
-        elif request.POST['download_type'] == 'csv':
-            response = HttpResponse(content_type='text/csv')
-            filename = f"{context['title']}.csv"
-            response['Content-Disposition'] = f'attachment; filename="{filename}"'
-            writer = csv.writer(response)
-            writer.writerow(['Title', 'Headings', 'Paragraphs'])
-            rows = zip([context['title']], context['headings'], context['paragraphs'])
-            for row in rows:
-                writer.writerow(row)
-        elif request.POST['download_type'] == 'json':
-            response = HttpResponse(content_type='application/json')
-            filename = f"{context['title']}.json"
-            response['Content-Disposition'] = f'attachment; filename="{filename}"'
-            json.dump(context, response, indent=4)
-        return response
-    else:
-        return render(request, 'home.html')
