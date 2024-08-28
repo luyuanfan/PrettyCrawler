@@ -90,31 +90,31 @@ def get_and_store_page_content(request, url, parent):
     if not is_valid:
         error_message = "ERROR: URL is not valid."
         print(error_message)
-        return
+        return None, []
 
     # Check if page is valid. 
     response = requests.get(url)
     if not response:
         error_message = "ERROR: Failed to get network response."
         print(error_message)
-        return
+        return None, []
 
     # Use BeautifulSoup to parse response.
     soup = BeautifulSoup(response.content, 'html.parser')
     if not soup:
         error_message = "ERROR: Failed to parse page content."
         print(error_message)
-        return
-
-    hrefs = []
-    for a in soup.find_all('a', href=True):
-        hrefs.append(a['href'])
+        return None, []
 
     # Create and construct safe directory name from page title. 
     title = soup.find('title').string if soup.title else 'No title available'
     safe_filename = title.replace('/', '_').replace(' ','_').replace(':', '_')
 
+    # Retrieve user ID and associate it with this page. 
     user_id = request.POST.get('scraper_user_id', None)
+
+    # Extract links in this page for further scraping
+    hrefs = [a['href'] for a in soup.find_all('a', href=True)]
 
     page = Page.create(
         user_id=user_id,
@@ -143,7 +143,7 @@ def recursive_scrape(request, url, max_depth, curr_depth, parent):
         return
 
     # If curr_depth indicates we should go to the next level. 
-    if curr_depth < max_depth:
+    if curr_depth <= max_depth:
 
         # Find all URLs on page and create page for them. 
         for link in hrefs:
@@ -190,8 +190,10 @@ def retrieve_pages(user_id, url):
     Retrieves all files linked to the root page. 
     '''
     root_page = Page.objects.filter(user_id=user_id, url=url, parent__isnull=True).first()
-    pages = [root_page] + list(root_page.linked_pages.all())
-    return pages
+    if root_page:
+        pages = [root_page] + list(root_page.linked_pages.all())
+        return pages
+    return []
 
 def download(request):
     '''
@@ -236,10 +238,13 @@ def download(request):
                     content = generate_json(page)
                 zf.writestr(filename, content)
         
-        return response
+        request.session['files_ready'] = False
+        return render(request, 'home.html')
+        # return response
 
     else:
 
+        request.session['files_ready'] = False
         return render(request, 'home.html')
 
 def generate_pdf(page):
