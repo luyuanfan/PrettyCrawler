@@ -16,7 +16,7 @@ class Page(models.Model):
 
     def __str__(self):
         return f'{self.safe_filename} ({self.url})'
-    
+
     @classmethod
     def create(cls, user_id, url, title, safe_filename, content, parent):
         page = cls(

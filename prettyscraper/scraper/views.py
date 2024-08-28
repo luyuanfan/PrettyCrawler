@@ -5,6 +5,7 @@ import os
 import io
 from pathlib import Path
 from zipfile import ZipFile
+import re
 
 # Imports from Django libraries. 
 from django.shortcuts import render, redirect
@@ -24,6 +25,7 @@ from bs4 import BeautifulSoup
 from reportlab.pdfgen import canvas
 from xhtml2pdf import pisa
 import requests
+from reportlab.pdfgen import canvas
 
 # Imports from our models.
 from .models import Page
@@ -73,6 +75,23 @@ def validate_url(url):
         return False, str(e)
     return True, 'URL exists.'
 
+def get_safe_filename(filename):
+    '''
+    Cleans up '\n' and any other invalid characters to HTTP response headers.
+    I also just cleaned up all characters that I'm not fond of =^OwO^=. 
+    Args:
+      @ filename: a string.
+    Returns:
+      @ safe_filename: a string. 
+    '''
+    invalid_char_set = set("_:;.,/\"'?!(){}[]@<>=-+*#$&`|~^% \n")
+    safe_filename = ''.join([char if char not in invalid_char_set else '_' for char in filename])
+    safe_filename = re.sub(r'^_+|_+$', '', safe_filename)
+    safe_filename = re.sub(r'_{2,}', '_', safe_filename)
+    print(safe_filename)
+    if len(safe_filename) >= 255:
+        return safe_filename[0:255]
+    return safe_filename
 
 def get_and_store_page_content(request, url, parent):
     '''
@@ -88,27 +107,29 @@ def get_and_store_page_content(request, url, parent):
     # Check if URL is valid. 
     is_valid, error_message = validate_url(url)
     if not is_valid:
-        error_message = "ERROR: URL is not valid."
+        error_message = 'ERROR: URL is not valid.'
         print(error_message)
         return None, []
 
     # Check if page is valid. 
     response = requests.get(url)
     if not response:
-        error_message = "ERROR: Failed to get network response."
+        error_message = 'ERROR: Failed to get network response.'
         print(error_message)
         return None, []
 
     # Use BeautifulSoup to parse response.
     soup = BeautifulSoup(response.content, 'html.parser')
     if not soup:
-        error_message = "ERROR: Failed to parse page content."
+        error_message = 'ERROR: Failed to parse page content.'
         print(error_message)
         return None, []
 
     # Create and construct safe directory name from page title. 
     title = soup.find('title').string if soup.title else 'No title available'
-    safe_filename = title.replace('/', '_').replace(' ','_').replace(':', '_')
+
+    # Process raw filename to get one appropriate for HTTP response header.
+    safe_filename = get_safe_filename(title)
 
     # Retrieve user ID and associate it with this page. 
     user_id = request.POST.get('scraper_user_id', None)
@@ -191,8 +212,8 @@ def retrieve_pages(user_id, url):
     '''
     root_page = Page.objects.filter(user_id=user_id, url=url, parent__isnull=True).first()
     if root_page:
-        pages = [root_page] + list(root_page.linked_pages.all())
-        return pages
+        pages = list(root_page.linked_pages.all())
+        return [root_page, pages]
     return []
 
 def download(request):
@@ -207,40 +228,44 @@ def download(request):
 
     if request.method == 'POST':
 
+        # Get user ID and root_file URL from session. 
         user_id = request.session.get('scraper_user_id')
         print(f'user id is {user_id}')
         root_url = request.session.get('root_url', None)
         print(f'input url is {root_url}')
 
-        is_valid, error_message = validate_url(root_url)
-        if not is_valid:
-            error_message = "ERROR: URL is not valid."
-            print(error_message)
-            return HttpResponse(error_message, status=400)
-
-        pages = retrieve_pages(user_id, root_url)
-
+        # Retrieve all files associated with this user ID and root_file URL. 
+        root_page, pages = retrieve_pages(user_id, root_url)
+        
+        # Get download type from session. 
         download_type = request.POST.get('download_type')
 
-        zip_filename = f"{download_type}_files.zip"
+        # Generate zip filename from root_page name and download type. 
+        zip_filename = f'({download_type}){root_page.safe_filename}.zip'
 
+        # Create a downloadable zip-typ HTTP response. 
         response = HttpResponse(content_type='application/zip')
         response['Content-Disposition'] = f'attachment; filename="{zip_filename}"'
 
         with ZipFile(response, 'w') as zf:
             for page in pages:
-                filename = f"{page.safe_filename}.{download_type}"
-                if download_type == 'pdf':
-                    content = generate_pdf(page)
-                elif download_type == 'csv':
-                    content = generate_csv(page)
-                elif download_type == 'json':
-                    content = generate_json(page)
+                # Generate one filename
+                filename = f'{page.safe_filename}.{download_type}'
+                
+                # Generate one file based on 
+                match download_type:
+                    case 'pdf':
+                        content = generate_pdf(page)
+                    case 'csv':
+                        content = generate_csv(page)
+                    case 'json':
+                        content = generate_json(page)
+                
                 zf.writestr(filename, content)
         
         request.session['files_ready'] = False
-        return render(request, 'home.html')
-        # return response
+        # return render(request, 'home.html')
+        return response
 
     else:
 
@@ -251,25 +276,31 @@ def generate_pdf(page):
     '''
     Generates PDF download type.
     Args: 
-      @ page: file
+      @ page: one Page object. 
     Returns:
       @ response: 
     '''
+
+    # Create a file-like buffer to receive PDF data.
     pdf_buffer = io.BytesIO()
-    template_path = 'result.html'
-    template = get_template(template_path)
+
+    # Create the PDF object, using the buffer as its 'file.'
+    template = get_template('pdf_result.html')
     html = template.render({'content': page.content})
     pisa_status = pisa.CreatePDF(html, dest=pdf_buffer, encoding='utf-8')
+
     pdf_buffer.seek(0)
+
     if pisa_status.err:
         raise Exception('PDF generation failed')
+    
     return pdf_buffer.getvalue()
 
 def generate_csv(page):
     '''
     Generates CSV download type.
     Args: 
-      @ pages: files
+      @ pages: one Page object. 
     Returns:
       @ response: 
     '''
@@ -281,12 +312,12 @@ def generate_csv(page):
     return csv_buffer.getvalue().encode('utf-8')
 
 
-def generate_json(pages):
+def generate_json(page):
     '''
     Generates JSON download type. 
     Args: 
-      @ pages: files
-    Returns:
+      @ page: one Page object. 
+    Returns: 
       @ response: 
     '''
     data = {
