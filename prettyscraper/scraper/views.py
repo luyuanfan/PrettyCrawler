@@ -106,6 +106,10 @@ def get_and_store_page_content(request, url, parent):
         print(error_message)
         return
 
+    hrefs = []
+    for a in soup.find_all('a', href=True):
+        hrefs.append(a['href'])
+
     # Create and construct safe directory name from page title. 
     title = soup.find('title').string if soup.title else 'No title available'
     safe_filename = title.replace('/', '_').replace(' ','_').replace(':', '_')
@@ -121,7 +125,7 @@ def get_and_store_page_content(request, url, parent):
         parent=parent
     )
 
-    return page
+    return [page, hrefs]
 
 def recursive_scrape(request, url, max_depth, curr_depth, parent):
     '''
@@ -134,7 +138,7 @@ def recursive_scrape(request, url, max_depth, curr_depth, parent):
     
     if curr_depth > max_depth: return
 
-    page = get_and_store_page_content(request, url, parent)
+    page, hrefs = get_and_store_page_content(request, url, parent)
     if not page:
         return
 
@@ -142,10 +146,8 @@ def recursive_scrape(request, url, max_depth, curr_depth, parent):
     if curr_depth < max_depth:
 
         # Find all URLs on page and create page for them. 
-        hrefs = []
-        for a in soup.find_all('a', href=True):
-            link = a['href']
-            recursive_scrape(request, link, max_depth, curr_depth + 1, page)
+        for link in hrefs:
+            ret = recursive_scrape(request, link, max_depth, curr_depth + 1, page)
 
     return True
         
@@ -166,13 +168,14 @@ def scrape(request):
         request.session['root_url'] = url 
 
         # Get recursion depth from session. 
-        max_depth = int(request.POST.get('depth', 1))
-        print(f'max_depth is {max_depth}')
+        max_depth = request.POST.get('depth', 1)
+        if not max_depth:
+            max_depth = 1
+        max_depth = int(max_depth)
 
         # Parent page should be None the first time recursive_scrape is called
         files_ready = recursive_scrape(request, url, max_depth, 1, None)
         if files_ready:
-
             # Notify that request files has been scraped and are ready for download.
             request.session['files_ready'] = True
 
@@ -250,7 +253,7 @@ def generate_pdf(page):
     pdf_buffer = io.BytesIO()
     template_path = 'result.html'
     template = get_template(template_path)
-    html = template.render({'page': page})
+    html = template.render({'content': page.content})
     pisa_status = pisa.CreatePDF(html, dest=pdf_buffer, encoding='utf-8')
     pdf_buffer.seek(0)
     if pisa_status.err:
@@ -281,7 +284,6 @@ def generate_json(pages):
     Returns:
       @ response: 
     '''
-
     data = {
         'title': page.title,
         'url': page.url,
