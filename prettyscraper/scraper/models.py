@@ -39,11 +39,13 @@ class Page(models.Model):
         Returns a list of Page instances.
         """
         all_pages = []
+        children = Page.objects.filter(parent=self)
 
-        children = list(self.linked_pages.all())
-        if not children:
-            return []
+        print(f'Found {len(children)} children for page {self.url}')
+
         for child in children:
+            print(f'Processing child page: {child.url}')
             all_pages.append(child)
             all_pages.extend(child.get_all_children())
+
         return all_pages

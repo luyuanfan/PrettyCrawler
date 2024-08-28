@@ -123,7 +123,8 @@ def get_and_store_page_content(request, url, parent):
       @ url: URL of a webpage. 
       @ parent: page object from which url is found.
     Returns:
-      @ page: One Page object. 
+      @ page: One Page object.
+      @ hrefs: a list of URL. 
     '''
 
     # Check if URL is valid. 
@@ -159,6 +160,7 @@ def get_and_store_page_content(request, url, parent):
     # Retrieve user ID. 
     user_id = request.session.get('scraper_user_id')
 
+    # Store Page object in database.
     page = Page.create(
         user_id=user_id,
         url=url,
@@ -170,7 +172,7 @@ def get_and_store_page_content(request, url, parent):
     )
 
     print(f'saved page {page.safe_filename} in database! url: {page.url}, parent: {page.parent}')
-    return [page, hrefs]
+    return page, hrefs
 
 def recursive_scrape(request, base, url, max_depth, curr_depth, parent):
     '''
@@ -179,20 +181,32 @@ def recursive_scrape(request, base, url, max_depth, curr_depth, parent):
     Later I want to store them in a structured thing.... But now we can just append. 
     TODO: Can we add a detect add functionality, so that we rule out those links.
     TODO: Notify user that this URL is not valid on frontend. We can do all this later.
+    Returns:
+      @ Boolean. 
     '''
-    
-    if curr_depth > max_depth: return
+    # If we have gone through all files, return True to indicates that files are ready. 
+    if curr_depth > max_depth:
+        print("ALERT: max depth reached")
+        return True
 
+    # Get main page contents and all URL it links to, it is also stored in database.
     page, hrefs = get_and_store_page_content(request, url, parent)
     if not page:
-        return
-    
-    # Find all URLs on page and create page for them. 
-    for link in hrefs:
-        if not is_absolute(link):
-            link = get_absolute_url(base, link)
-        ret = recursive_scrape(request, base, link, max_depth, curr_depth + 1, page)
+        print('Alert! get page returned none from get and store page')
+        return False
 
+    print(f'hey we found the links on your current webpage: {hrefs}')
+
+    if curr_depth < max_depth:
+        # Find all URLs on page and create page for them. 
+        for link in hrefs:
+            if not is_absolute(link):
+                link = get_absolute_url(base, link)
+                print(f'absolute link {link}')
+            # Here we can set the current Page object as the parent of the next one.
+            ret = recursive_scrape(request, base, link, max_depth, curr_depth + 1, page)
+    else:
+        print("ALERT: we end at current level")
     return True
         
 def scrape(request):
@@ -205,7 +219,7 @@ def scrape(request):
     '''
     if request.method == 'POST':
 
-        # Get URL of the webpage that user wants to scrape from session.
+        # Get URL from session of the webpage that user wants to scrape.
         url = request.POST.get('input_url', None)
 
         # Set this URL as the root of this session (since it could be the parent of more webpages)
@@ -224,6 +238,8 @@ def scrape(request):
         files_ready = recursive_scrape(request, base_url, url, max_depth, 1, None)
         if files_ready:
             request.session['files_ready'] = True
+        else:
+            request.session['files_ready'] = False
 
         return render(request, 'home.html')
         
@@ -251,7 +267,8 @@ def retrieve_all_pages(user_id, root_url):
     print(f"Root page found: {root_page}")
     # Get not only the direct children but grandchildren pages, etc. 
     pages = root_page.get_all_children()
-    
+    if not pages:
+        print(f'There is no pages associated with this root page.')
     print(f"Total pages linked to root page (including all descendants): {len(pages)}")
     for page in pages:
         print(f"Linked page: {page.title} at {page.url}")
@@ -274,6 +291,8 @@ def download(request):
         # Get user ID and root_file URL from session. 
         user_id = request.session.get('scraper_user_id')
         root_url = request.session.get('root_url', None)
+        if not root_url:
+            print(f'ERROR: You entered an empty URL and tried to download nothing.')
 
         # Retrieve all files associated with this user ID and root_file URL. 
         root_page, all_pages = retrieve_all_pages(user_id, root_url)
