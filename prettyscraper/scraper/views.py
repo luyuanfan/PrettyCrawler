@@ -26,6 +26,7 @@ from reportlab.pdfgen import canvas
 from xhtml2pdf import pisa
 import requests
 from reportlab.pdfgen import canvas
+from urllib.parse import urljoin, urlparse
 
 # Imports from our models.
 from .models import Page
@@ -84,7 +85,7 @@ def get_safe_filename(filename):
     Returns:
       @ safe_filename: a string. 
     '''
-    invalid_char_set = set("_:;.,/\"'?!(){}[]@<>=-+*#$&`|~^% \n")
+    invalid_char_set = set("_:;.,/\"?!(){}[]@<>=-+*#$&`|~^% \n")
     safe_filename = ''.join([char if char not in invalid_char_set else '_' for char in filename])
     safe_filename = re.sub(r'^_+|_+$', '', safe_filename)
     safe_filename = re.sub(r'_{2,}', '_', safe_filename)
@@ -92,6 +93,27 @@ def get_safe_filename(filename):
     if len(safe_filename) >= 255:
         return safe_filename[0:255]
     return safe_filename
+
+def get_absolute_url(base, link):
+    '''
+    Convert a relative link to an absolute URL based on the base URL.
+    Args:
+      @ base: The base URL of the current page.
+      @ link: The href attribute value found in the page.
+    Returns:
+      An absolute URL.
+    '''
+    return urljoin(base, link)
+
+def is_absolute(link):
+    '''
+    Check is a URL is absolute. 
+    Args:
+      @ link: The href attribute value found in the page.
+    Returns:
+      Boolean. 
+    '''
+    return bool(urlparse(link).netloc)
 
 def get_and_store_page_content(request, url, parent):
     '''
@@ -150,7 +172,7 @@ def get_and_store_page_content(request, url, parent):
     print(f'saved page {page.safe_filename} in database! url: {page.url}, user: {page.user_id}')
     return [page, hrefs]
 
-def recursive_scrape(request, url, max_depth, curr_depth, parent):
+def recursive_scrape(request, base, url, max_depth, curr_depth, parent):
     '''
     This function recursively get page content from a URL.
     It should collect to all URL present a current page and traverse to those links.
@@ -165,12 +187,12 @@ def recursive_scrape(request, url, max_depth, curr_depth, parent):
     if not page:
         return
 
-    # If curr_depth indicates we should go to the next level. 
-    if curr_depth <= max_depth:
 
-        # Find all URLs on page and create page for them. 
-        for link in hrefs:
-            ret = recursive_scrape(request, link, max_depth, curr_depth + 1, page)
+    # Find all URLs on page and create page for them. 
+    for link in hrefs:
+        if not is_absolute(link):
+            link = get_absolute_url(base, link)
+        ret = recursive_scrape(request, base, link, max_depth, curr_depth + 1, page)
 
     return True
         
@@ -196,8 +218,11 @@ def scrape(request):
             max_depth = 1
         max_depth = int(max_depth)
 
+        # Set a base url for links that are partial. 
+        base_url = url
+
         # Parent page should be None the first time recursive_scrape is called
-        files_ready = recursive_scrape(request, url, max_depth, 1, None)
+        files_ready = recursive_scrape(request, base_url, url, max_depth, 1, None)
         if files_ready:
             # Notify that request files has been scraped and are ready for download.
             request.session['files_ready'] = True
@@ -257,10 +282,11 @@ def download(request):
 
         with ZipFile(response, 'w') as zf:
             for page in pages:
-                # Generate one filename
-                filename = f'{page.safe_filename}.{download_type}'
+
+                # Generate one filename with folder. 
+                filename = f'{root_page.safe_filename}/{page.safe_filename}.{download_type}'
                 
-                # Generate one file based on 
+                # Generate one file based on chosen download type. 
                 match download_type:
                     case 'pdf':
                         content = generate_pdf(page)
@@ -272,7 +298,6 @@ def download(request):
                 zf.writestr(filename, content)
         
         request.session['files_ready'] = False
-        # return render(request, 'home.html')
         return response
 
     else:
@@ -294,7 +319,8 @@ def generate_pdf(page):
 
     # Create the PDF object, using the buffer as its 'file.'
     template = get_template('pdf_result.html')
-    html = template.render({'content': page.content})
+    links_found = page.hrefs if page.hrefs else f'No links found.'
+    html = template.render({ 'content': page.content, 'hrefs': links_found })
     pisa_status = pisa.CreatePDF(html, dest=pdf_buffer, encoding='utf-8')
 
     pdf_buffer.seek(0)
@@ -318,7 +344,6 @@ def generate_csv(page):
     writer.writerow([page.title, page.url, page.content])
     csv_buffer.seek(0)
     return csv_buffer.getvalue().encode('utf-8')
-
 
 def generate_json(page):
     '''
