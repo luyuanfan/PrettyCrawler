@@ -169,7 +169,7 @@ def get_and_store_page_content(request, url, parent):
         parent=parent
     )
 
-    print(f'saved page {page.safe_filename} in database! url: {page.url}, user: {page.user_id}')
+    print(f'saved page {page.safe_filename} in database! url: {page.url}, parent: {page.parent}')
     return [page, hrefs]
 
 def recursive_scrape(request, base, url, max_depth, curr_depth, parent):
@@ -186,7 +186,6 @@ def recursive_scrape(request, base, url, max_depth, curr_depth, parent):
     page, hrefs = get_and_store_page_content(request, url, parent)
     if not page:
         return
-
 
     # Find all URLs on page and create page for them. 
     for link in hrefs:
@@ -224,7 +223,6 @@ def scrape(request):
         # Parent page should be None the first time recursive_scrape is called
         files_ready = recursive_scrape(request, base_url, url, max_depth, 1, None)
         if files_ready:
-            # Notify that request files has been scraped and are ready for download.
             request.session['files_ready'] = True
 
         return render(request, 'home.html')
@@ -233,7 +231,7 @@ def scrape(request):
 
         return render(request, 'home.html')
 
-def retrieve_pages(user_id, root_url):
+def retrieve_all_pages(user_id, root_url):
     '''
     Retrieves all files linked to the root page.
     Args:
@@ -242,11 +240,18 @@ def retrieve_pages(user_id, root_url):
     Returns:
       @ root_page, [pages]: a pair of root_page and all other pages. 
     '''
+
+    # Get root page. 
     root_page = Page.objects.filter(user_id=user_id, url=root_url, parent__isnull=True).first()
-    if root_page:
-        pages = list(root_page.linked_pages.all())
-        return root_page, [root_page] + pages
-    return []
+
+    # Get not only the direct children but grandchildren pages, etc. 
+    all_pages = root_page.get_all_children()
+
+    print(f'\nALERT! below are all pages linked to the current one\n')
+    for p in all_pages:
+        print(p)
+
+    return root_page, all_pages
 
 def download(request):
     '''
@@ -267,8 +272,7 @@ def download(request):
         print(f'in download we got the input url is {root_url}')
 
         # Retrieve all files associated with this user ID and root_file URL. 
-        root_page, pages = retrieve_pages(user_id, root_url)
-        print(root_page)
+        root_page, pages = retrieve_all_pages(user_id, root_url)
         
         # Get download type from session. 
         download_type = request.POST.get('download_type')
