@@ -186,7 +186,7 @@ def recursive_scrape(request, base, url, max_depth, curr_depth, parent):
     page, hrefs = get_and_store_page_content(request, url, parent)
     if not page:
         return
-
+    
     # Find all URLs on page and create page for them. 
     for link in hrefs:
         if not is_absolute(link):
@@ -241,17 +241,23 @@ def retrieve_all_pages(user_id, root_url):
       @ root_page, [pages]: a pair of root_page and all other pages. 
     '''
 
+    print(f"Retrieving pages for user ID: {user_id} with root URL: {root_url}")
     # Get root page. 
     root_page = Page.objects.filter(user_id=user_id, url=root_url, parent__isnull=True).first()
-
+    if not root_page:
+        print(f"ALERT: No root page found in the database for URL {root_url}")
+        return [], []
+    
+    print(f"Root page found: {root_page}")
     # Get not only the direct children but grandchildren pages, etc. 
-    all_pages = root_page.get_all_children()
+    pages = root_page.get_all_children()
+    
+    print(f"Total pages linked to root page (including all descendants): {len(pages)}")
+    for page in pages:
+        print(f"Linked page: {page.title} at {page.url}")
 
-    print(f'\nALERT! below are all pages linked to the current one\n')
-    for p in all_pages:
-        print(p)
-
-    return root_page, all_pages
+    print(f'returning root {root_page} and all {pages}')
+    return root_page, [root_page] + pages
 
 def download(request):
     '''
@@ -267,25 +273,23 @@ def download(request):
 
         # Get user ID and root_file URL from session. 
         user_id = request.session.get('scraper_user_id')
-        print(f'in download we got the user id is {user_id}')
         root_url = request.session.get('root_url', None)
-        print(f'in download we got the input url is {root_url}')
 
         # Retrieve all files associated with this user ID and root_file URL. 
-        root_page, pages = retrieve_all_pages(user_id, root_url)
+        root_page, all_pages = retrieve_all_pages(user_id, root_url)
         
         # Get download type from session. 
         download_type = request.POST.get('download_type')
 
         # Generate zip filename from root_page name and download type. 
-        zip_filename = f'({download_type}){root_page.safe_filename}.zip'
+        zip_filename = f'({download_type}) {root_page.safe_filename}.zip'
 
         # Create a downloadable zip-typ HTTP response. 
         response = HttpResponse(content_type='application/zip')
         response['Content-Disposition'] = f'attachment; filename="{zip_filename}"'
 
         with ZipFile(response, 'w') as zf:
-            for page in pages:
+            for page in all_pages:
 
                 # Generate one filename with folder. 
                 filename = f'{root_page.safe_filename}/{page.safe_filename}.{download_type}'

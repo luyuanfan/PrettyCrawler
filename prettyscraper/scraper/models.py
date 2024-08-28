@@ -41,6 +41,8 @@ class Page(models.Model):
         all_pages = []
 
         children = list(self.linked_pages.all())
+        if not children:
+            return []
         for child in children:
             all_pages.append(child)
             all_pages.extend(child.get_all_children())
