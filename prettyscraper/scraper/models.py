@@ -1,23 +1,39 @@
 from django.db import models
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
-from django.contrib.auth.models import User
+# from django.contrib.auth.models import User
 # from django.core.files.storage import default_storage, FileSystemStorage
 
 # fs = FileSystemStorage(location='/downloads')
 
 class Page(models.Model):
-    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.CASCADE)
+
+    # Definitions of this model
+    user_id = models.CharField(max_length=255, null=True, blank=True)
+    # user = models.ForeignKey(User, null=True, blank=True, on_delete=models.CASCADE)
     url = models.URLField(unique=False)
-    title = models.CharField(max_length=255)
-    filename = models.CharField(max_length=255)
-    content = models.FileField()
+    title = models.CharField(max_length=255, null=True, blank=True)
+    safe_filename = models.CharField(max_length=255, default='Original file name not available')
+    content = models.FileField(null=True, blank=True)
+    parent = models.ForeignKey('self', related_name='linked_pages', on_delete=models.CASCADE, null=True, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
-    parent = models.ForeignKey('self', related_name='linked_pages', on_delete=models.CASCADE)
 
     def __str__(self):
-        return f'{self.title} ({self.url})'
-        
+        return f'{self.safe_filename} ({self.url})'
+    
+    @classmethod
+    def create(cls, user_id, url, title, safe_filename, content, parent):
+        page = cls(
+            user_id=user_id,
+            url=url,
+            title=title,
+            safe_filename=safe_filename,
+            content=content,
+            parent=parent
+        )
+        page.save()
+        return page
+
 # class Link(models.Model):
 #     src = models.ForeignKey(Page, on_delete=models.CASCADE)
 #     dst = models.ForeignKey(Page, on_delete=models.CASCADE)

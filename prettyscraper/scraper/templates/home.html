@@ -69,6 +69,8 @@
             <button type="submit">Scrape Website</button>
         </form>
         <br>
+        <div id="message">Your files are ready. Choose a download format and download them now.</div>
+        <br>
         <div>
             <form method="POST" action="/scraper/download/">
                 {% csrf_token %}
@@ -81,6 +83,17 @@
                 <button type="submit">Download</button>
             </form>
         </div>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const filesReady = "{{ request.session.files_ready | default:'False' }}";
+                if (filesReady === 'True') {
+                    document.getElementById('message').style.display = 'block';
+                }
+                else {
+                    document.getElementById('message').style.display = 'none';
+                }
+            });
+        </script>
     </div>
 </body>
 </html>

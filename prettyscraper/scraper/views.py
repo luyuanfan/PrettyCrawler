@@ -2,9 +2,9 @@
 import csv
 import json
 import os
-from io import BytesIO
+import io
 from pathlib import Path
-import zipfile
+from zipfile import ZipFile
 
 # Imports from Django libraries. 
 from django.shortcuts import render, redirect
@@ -49,7 +49,7 @@ def verify_user_id(request):
     # Create a User object associate with ID if it does not already exist.
     if not User.objects.filter(username=user_id).exists():
         try:
-            User.objects.create_user(username-user_id)
+            User.objects.create_user(username=user_id)
             return JsonResponse({'status': 'success', 'message': 'User created', 'user_id': user_id})
         except Exception as e:
             return JsonResponse({'status': 'error', 'message': e})
@@ -73,18 +73,22 @@ def validate_url(url):
     return True, 'URL exists.'
 
 
-def get_and_store_page_content(request, url, parent=None):
+def get_and_store_page_content(request, url, parent):
     '''
     Creates Page objects that represents content on one webpage.
     Args:
-      @
+      @ request: Django request object.
+      @ url: url of a webpage. 
+      @ parent: page object from which url is found.
     Returns:
-      @ 
+      @ page: Page object. 
     '''
+
     # Check if URL is valid. 
     is_valid, error_message = validate_url(url)
     if not is_valid:
-        print(f'ERROR: URL is not valid: {error_message}')
+        error_message = "ERROR: URL is not valid."
+        print(error_message)
         messages.error(request, error_message)
         return
 
@@ -102,79 +106,85 @@ def get_and_store_page_content(request, url, parent=None):
         error_message = "ERROR: Failed to parse page content."
         print(error_message)
         messages.error(request, error_message)
+        return
 
     # Create and construct safe directory name from page title. 
-    title = soup.find('title').string if soup.title else url
+    title = soup.find('title').string if soup.title else 'No title available'
     print(f"Before converting title to safe title, it is: {title}")
-    file_name = title.replace('/', '_').replace(' ','_').replace(':', '_')
-    print(f"After converting title to safe title, it is: {title}")
+    safe_filename = title.replace('/', '_').replace(' ','_').replace(':', '_')
+    print(f"After converting title to safe title, it is: {safe_filename}")
 
-    page = Page.objects.create(
-        user=request.user,
+    user_id = request.POST.get('scraper_user_id', None)
+
+    page = Page.create(
+        user_id=user_id,
         url=url,
         title=title,
-        filename = file_name,
+        safe_filename = safe_filename,
         content=str(soup),
         parent=parent
     )
 
     return page
 
-def get_page_content(request, url, max_depth, curr_depth):
+def recursive_scrape(request, url, max_depth, curr_depth, parent):
     '''
     This function recursively get page content from a URL.
     It should collect to all URL present a current page and traverse to those links.
     Later I want to store them in a structured thing.... But now we can just append. 
     TODO: Can we add a detect add functionality, so that we rule out those links.
-    TODO: Also rememeber to check max depth reached.
     TODO: Notify user that this URL is not valid on frontend. We can do all this later.
     '''
-    if curr_depth == 1 and 
+    
     if curr_depth > max_depth: return
 
     page = get_and_store_page_content(request, url, parent)
+    if not page:
+        return
 
     # If curr_depth indicates we should go to the next level. 
     if curr_depth < max_depth:
-        # Find all URLs on page. 
+
+        # Find all URLs on page and create page for them. 
         hrefs = []
         for a in soup.find_all('a', href=True):
-            hrefs.append(a['href'])
-        
-        # Recursively call this function with new URLs. 
-        for link in hrefs:
-            if link:
-                get_page_content(request, link, max_depth, curr_depth + 1)
+            link = a['href']
+            recursive_scrape(request, link, max_depth, curr_depth + 1, page)
 
-    # # Construct file with path. 
-    # page_content = {
-    #     'title' : title,
-    #     'main' : soup,
-    #     'hrefs' : hrefs,
-    # }
-
-    # file = ContentFile(page_content, name=page_content.title)
-    # Page.objects.create(file=file)
-
-    print(f'Soup is {soup}, with a list of links {hrefs}')
-    # return page_content
+    return True
         
 def main(request):
     '''
     This function handles requests.
     It should direct user to download page when a file bundle is ready.
-    TODO: For the result page (or maybe just a new section on home page, we need an scrape another button)
     '''
     if request.method == 'POST':
+
         url = request.POST.get('input_url', None)
-        max_depth = int(request.POST.get('depth', 1))
+        request.session['root_url'] = url 
+        print(f'In MAIN input url is {url}')
+        max_depth = int(request.POST.get('depth'))
+        if not max_depth:
+            max_depth = 1
+        
+        # Parent page should be None the first time recursive_scrape is called
+        files_ready = recursive_scrape(request, url, max_depth, 1, None)
+        if files_ready:
+            request.session['files_ready'] = True
 
-        bundle = get_page_content(request, url, max_depth, 1)
-        return render(request, 'result.html', bundle)
-
-    else:
         return render(request, 'home.html')
         
+    else:
+
+        return render(request, 'home.html')
+
+def retrieve_pages(user_id, url):
+    '''
+    '''
+    root_page = Page.objects.filter(user_id=user_id, url=url, parent__isnull=True).first()
+    pages = [root_page] + list(root_page.linked_pages.all())
+    return pages
+
 def download(request):
     '''
     A django view to zip files in directory and send it as downloadable response to the browser.
@@ -187,119 +197,89 @@ def download(request):
 
     if request.method == 'POST':
 
-        context = request.session.get('scraped_data', {})
+        user_id = request.session.get('scraper_user_id')
+        print(f'user id is {user_id}')
+        root_url = request.session.get('root_url', None)
+        print(f'input url is {root_url}')
+
+        is_valid, error_message = validate_url(root_url)
+        if not is_valid:
+            error_message = "ERROR: URL is not valid."
+            print(error_message)
+            return HttpResponse(error_message, status=400)
+
+        pages = retrieve_pages(user_id, root_url)
+
         download_type = request.POST.get('download_type')
 
-        if download_type == 'pdf':
-            return generate_pdf(context)
-        elif download_type == 'csv':
-            return generate_csv(context)
-        elif download_type == 'json':
-            return generate_json(context)
-        else:
-            return render(request, 'home.html')
+        zip_filename = f"{download_type}_files.zip"
+
+        response = HttpResponse(content_type='application/zip')
+        response['Content-Disposition'] = f'attachment; filename="{zip_filename}"'
+
+        with ZipFile(response, 'w') as zf:
+            for page in pages:
+                filename = f"{page.safe_filename}.{download_type}"
+                if download_type == 'pdf':
+                    content = generate_pdf(page)
+                elif download_type == 'csv':
+                    content = generate_csv(page)
+                elif download_type == 'json':
+                    content = generate_json(page)
+                zf.writestr(filename, content)
+        
+        return response
 
     else:
 
         return render(request, 'home.html')
 
-    response = HttpResponse(byte_data.getvalue(), content_type='application/zip')
-    response['Content-Disposition'] = f'attachment; filename="{root_page.title}.zip"'
-
-    return response
-
-def generate_pdf(context):
+def generate_pdf(page):
     '''
     Generates PDF download type.
     Args: 
-      @ context: files
+      @ page: file
     Returns:
       @ response: 
     '''
-
+    pdf_buffer = io.BytesIO()
     template_path = 'result.html'
     template = get_template(template_path)
-    html = template.render(context)
-    response = HttpResponse(content_type='application/pdf')
-    filename = f"{context.get('title', 'download')}.pdf"
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
-    buffer = BytesIO()
-    pisa_status = pisa.CreatePDF(html, dest=response, encoding='utf-8')
+    html = template.render({'page': page})
+    pisa_status = pisa.CreatePDF(html, dest=pdf_buffer, encoding='utf-8')
+    pdf_buffer.seek(0)
     if pisa_status.err:
-        return HttpResponse('PDF generation failed')
-    return response
+        raise Exception('PDF generation failed')
+    return pdf_buffer.getvalue()
 
-def generate_csv(context):
+def generate_csv(page):
     '''
     Generates CSV download type.
     Args: 
-      @ context: files
+      @ pages: files
     Returns:
       @ response: 
     '''
-    filename = f"{context.get('title', 'download')}.csv"
+    csv_buffer = io.StringIO()
+    writer = csv.writer(csv_buffer)
+    writer.writerow(['Title', 'URL', 'Content'])
+    writer.writerow([page.title, page.url, page.content])
+    csv_buffer.seek(0)
+    return csv_buffer.getvalue().encode('utf-8')
 
-    response = HttpResponse(
-        content_type='text/csv',
-        headers = {'Content-Disposition' : 'attachment; filename = {filename}'},
-    )
 
-    writer = csv.writer(response)
-    writer.writerow(['Title', 'Content', 'Links'])
-    rows = zip([context.get('title', 'N/A')], context.get('content', []), context.get('links', []))
-
-    for row in rows:
-        writer.writerow(row)
-    
-    return response
-
-def generate_json(context):
+def generate_json(pages):
     '''
     Generates JSON download type. 
     Args: 
-      @ context: files
+      @ pages: files
     Returns:
       @ response: 
     '''
 
-    response = HttpResponse(content_type='application/json')
-    filename = f"{context.get('title', 'download')}.json"
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
-    json.dump(context, response, indent=4)
-    return response
-
-
-def download_zip(file_name):
-    '''
-    Compresses PDF/CSV/JSON file folders into a downloadable zip.
-    Args:
-     @
-    Returns:
-     @ 
-    '''
-    pass
-    file_path = '<path>/' + file_name
-    fsock = open(file_name_with_path,"rb")
-    response = HttpResponse(fsock, content_type='application/zip')
-    response['Content-Disposition'] = 'attachment; filename=myfile.zip'
-    return response
-
-    # def add_to_zip(page, path=''):
-    #     filename = f'{path}{page.title}.html'
-    #     archive.writestr(filename, page.content)
-    #     for child in page.linked_pages.all():
-    #         child_path = f'{path}{page.title}/'
-    #         add_to_zip(child, path=child_path)
-        
-    # root_page = Page.objects.get(id=root_page_id, user=request.user)
-
-    # byte_data = io.BytesIO()
-    # pisa_status = pisa.CreatePDF(html, dest=response, encoding='utf-8')
-    # if pisa_status.err:
-    #     print(f'ERROR: PDF generation failed')
-    #     return HttpResponse('ERROR: PDF generation failed')
-    # zipfile = zipfile.ZipFile(byte_data, 'w')
-        
-    # add_to_zip(root_page)
-
-    # byte_data.seek(0)
+    data = {
+        'title': page.title,
+        'url': page.url,
+        'content': page.content
+    }
+    return json.dumps(data, indent=4).encode('utf-8')
