@@ -28,6 +28,7 @@ import requests
 # Imports from our models.
 from .models import Page
 
+
 def home(request):
     '''
     Default homepage. 
@@ -78,10 +79,10 @@ def get_and_store_page_content(request, url, parent):
     Creates Page objects that represents content on one webpage.
     Args:
       @ request: Django request object.
-      @ url: url of a webpage. 
+      @ url: URL of a webpage. 
       @ parent: page object from which url is found.
     Returns:
-      @ page: Page object. 
+      @ page: One Page object. 
     '''
 
     # Check if URL is valid. 
@@ -89,7 +90,6 @@ def get_and_store_page_content(request, url, parent):
     if not is_valid:
         error_message = "ERROR: URL is not valid."
         print(error_message)
-        messages.error(request, error_message)
         return
 
     # Check if page is valid. 
@@ -97,7 +97,6 @@ def get_and_store_page_content(request, url, parent):
     if not response:
         error_message = "ERROR: Failed to get network response."
         print(error_message)
-        messages.error(request, error_message)
         return
 
     # Use BeautifulSoup to parse response.
@@ -105,14 +104,11 @@ def get_and_store_page_content(request, url, parent):
     if not soup:
         error_message = "ERROR: Failed to parse page content."
         print(error_message)
-        messages.error(request, error_message)
         return
 
     # Create and construct safe directory name from page title. 
     title = soup.find('title').string if soup.title else 'No title available'
-    print(f"Before converting title to safe title, it is: {title}")
     safe_filename = title.replace('/', '_').replace(' ','_').replace(':', '_')
-    print(f"After converting title to safe title, it is: {safe_filename}")
 
     user_id = request.POST.get('scraper_user_id', None)
 
@@ -153,23 +149,31 @@ def recursive_scrape(request, url, max_depth, curr_depth, parent):
 
     return True
         
-def main(request):
+def scrape(request):
     '''
-    This function handles requests.
-    It should direct user to download page when a file bundle is ready.
+    Handles scrape requests.
+    Args:
+      @ request: Django request object.
+    Returns:
+      @ response: 
     '''
     if request.method == 'POST':
 
+        # Get URL of the webpage that user wants to scrape from session.
         url = request.POST.get('input_url', None)
+
+        # Set this URL as the root of this session (since it could be the parent of more webpages)
         request.session['root_url'] = url 
-        print(f'In MAIN input url is {url}')
-        max_depth = int(request.POST.get('depth'))
-        if not max_depth:
-            max_depth = 1
-        
+
+        # Get recursion depth from session. 
+        max_depth = int(request.POST.get('depth', 1))
+        print(f'max_depth is {max_depth}')
+
         # Parent page should be None the first time recursive_scrape is called
         files_ready = recursive_scrape(request, url, max_depth, 1, None)
         if files_ready:
+
+            # Notify that request files has been scraped and are ready for download.
             request.session['files_ready'] = True
 
         return render(request, 'home.html')
@@ -180,6 +184,7 @@ def main(request):
 
 def retrieve_pages(user_id, url):
     '''
+    Retrieves all files linked to the root page. 
     '''
     root_page = Page.objects.filter(user_id=user_id, url=url, parent__isnull=True).first()
     pages = [root_page] + list(root_page.linked_pages.all())
