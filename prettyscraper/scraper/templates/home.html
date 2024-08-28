@@ -43,8 +43,6 @@
                 localStorage.setItem('scraper_user_id', user_id);
             }
     
-            console.log("At frontend we have the user_id", user_id)
-    
             if (user_id) {
                 $.ajax({
                     url: '/scraper/verify_user_id/',

@@ -53,11 +53,11 @@ def verify_user_id(request):
     if not User.objects.filter(username=user_id).exists():
         try:
             User.objects.create_user(username=user_id)
-            return JsonResponse({'status': 'success', 'message': 'User created', 'user_id': user_id})
         except Exception as e:
             return JsonResponse({'status': 'error', 'message': e})
-    else:
-        return JsonResponse({'status': 'success', 'message': 'User already exists', 'user_id': user_id})
+    
+    request.session['scraper_user_id'] = user_id
+    return JsonResponse({'status': 'success', 'message': 'User already exists', 'user_id': user_id})
         
 def validate_url(url):
     '''
@@ -131,21 +131,23 @@ def get_and_store_page_content(request, url, parent):
     # Process raw filename to get one appropriate for HTTP response header.
     safe_filename = get_safe_filename(title)
 
-    # Retrieve user ID and associate it with this page. 
-    user_id = request.POST.get('scraper_user_id', None)
-
     # Extract links in this page for further scraping
     hrefs = [a['href'] for a in soup.find_all('a', href=True)]
+
+    # Retrieve user ID. 
+    user_id = request.session.get('scraper_user_id')
 
     page = Page.create(
         user_id=user_id,
         url=url,
         title=title,
-        safe_filename = safe_filename,
+        safe_filename=safe_filename,
+        hrefs=str(hrefs), 
         content=str(soup),
         parent=parent
     )
 
+    print(f'saved page {page.safe_filename} in database! url: {page.url}, user: {page.user_id}')
     return [page, hrefs]
 
 def recursive_scrape(request, url, max_depth, curr_depth, parent):
@@ -206,14 +208,19 @@ def scrape(request):
 
         return render(request, 'home.html')
 
-def retrieve_pages(user_id, url):
+def retrieve_pages(user_id, root_url):
     '''
-    Retrieves all files linked to the root page. 
+    Retrieves all files linked to the root page.
+    Args:
+      @ user_id: unqiue identifier of a user.
+      @ root_url: URL of the webpage a user entered.
+    Returns:
+      @ root_page, [pages]: a pair of root_page and all other pages. 
     '''
-    root_page = Page.objects.filter(user_id=user_id, url=url, parent__isnull=True).first()
+    root_page = Page.objects.filter(user_id=user_id, url=root_url, parent__isnull=True).first()
     if root_page:
         pages = list(root_page.linked_pages.all())
-        return [root_page, pages]
+        return root_page, [root_page] + pages
     return []
 
 def download(request):
@@ -230,12 +237,13 @@ def download(request):
 
         # Get user ID and root_file URL from session. 
         user_id = request.session.get('scraper_user_id')
-        print(f'user id is {user_id}')
+        print(f'in download we got the user id is {user_id}')
         root_url = request.session.get('root_url', None)
-        print(f'input url is {root_url}')
+        print(f'in download we got the input url is {root_url}')
 
         # Retrieve all files associated with this user ID and root_file URL. 
         root_page, pages = retrieve_pages(user_id, root_url)
+        print(root_page)
         
         # Get download type from session. 
         download_type = request.POST.get('download_type')
