@@ -240,11 +240,12 @@ def scrape(request):
         # Parent page should be None the first time recursive_scrape is called
         files_ready = recursive_scrape(request, base_url, url, max_depth, 1, None)
         if files_ready:
-            request.session['files_ready'] = True
+            request.session['files_ready'] = 'True'
         else:
-            request.session['files_ready'] = False
+            request.session['files_ready'] = 'False'
 
-        return render(request, 'home.html')
+        # return render(request, 'home.html')
+        return JsonResponse({'filesReady': files_ready})
         
     else:
 
@@ -335,13 +336,13 @@ def download(request):
                 
                 zf.writestr(filename, content)
         
-        request.session['files_ready'] = False
+        request.session['files_ready'] = 'False'
         render(request, 'home.html')
         return response
 
     else:
 
-        request.session['files_ready'] = False
+        request.session['files_ready'] = 'False'
         return render(request, 'home.html')
 
 def generate_pdf(page):

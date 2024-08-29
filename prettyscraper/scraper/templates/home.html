@@ -68,7 +68,7 @@
     <div class="container">
         <script>
             function generate_user_id() {
-                return '12345'; // Consider uncommenting `return nanoid();` for dynamic IDs
+                return nanoid();
             }
 
             var user_id = localStorage.getItem('scraper_user_id');
@@ -88,21 +88,20 @@
                 });
             }
         </script>
-        <!-- <h1>Scraper</h1> -->
         <img src="{% static 'scraper_logo.png' %}" class="logo">
         <p>Enter a URL below to download its content.</p>
         <p>You might also want to specify a depth to download the content along with linked pages.</p>
-        <form method="POST" action="/scraper/scrape/">
+        <form id="scrapeForm" method="POST" action="/scraper/scrape/">
             {% csrf_token %}
-            <input type="text" name="input_url" placeholder="Put a link here..." required>
-            <input type="number" name="depth" placeholder="depth">
-            <button type="submit">Scrape Website</button>
+            <input type="text" name="input_url" id="input_url" placeholder="Put a link here..." required>
+            <input type="number" name="depth" id="depth" placeholder="Depth" value="1">
+            <button type="button" onclick="submitScrapeForm()">Scrape Website</button>
         </form>
         <br>
         <div id="message">Your files are ready. Choose a download format and download them now.</div>
         <br>
         <div>
-            <form method="POST" action="/scraper/download/">
+            <form id="downloadForm" method="POST" action="/scraper/download/">
                 {% csrf_token %}
                 <label for="download_type">Choose a download format:</label>
                 <select name="download_type" id="download_type">
@@ -117,16 +116,44 @@
             document.addEventListener('DOMContentLoaded', function() {
                 const filesReady = "{{ request.session.files_ready | default:'False' }}";
                 const messageDiv = document.getElementById('message');
-                const formDiv = document.querySelector('form'); // Assuming you have a form element reference for visibility toggling
+                const downloadFormDiv = document.getElementById('downloadForm');
 
                 if (filesReady === 'True') {
                     messageDiv.style.display = 'block';
-                    formDiv.style.display = 'block';
+                    downloadFormDiv.style.display = 'block';
                 } else {
                     messageDiv.style.display = 'none';
-                    formDiv.style.display = 'none';
+                    downloadFormDiv.style.display = 'none';
                 }
             });
+
+            function submitScrapeForm() {
+                var formData = {
+                    'csrfmiddlewaretoken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                    'input_url': document.getElementById('input_url').value,
+                    'depth': document.getElementById('depth').value
+                };
+                $.ajax({
+                    type: 'POST',
+                    url: '/scraper/scrape/',
+                    data: formData,
+                    success: function(response) {
+                        console.log('Scraping complete');
+                        if (response.filesReady) {
+                            document.getElementById('message').innerText = 'Your files are ready. Choose a download format and download them now.';
+                            document.getElementById('message').style.display = 'block';
+                            document.getElementById('downloadForm').style.display = 'block';
+                        } else {
+                            document.getElementById('message').innerText = 'Files are not ready yet, please try again.';
+                            document.getElementById('message').style.display = 'none';
+                            document.getElementById('message').style.display = 'none';
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('Error during scraping:', error);
+                    }
+                });
+            }
         </script>
     </div>
 </body>
