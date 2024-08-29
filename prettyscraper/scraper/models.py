@@ -13,7 +13,6 @@ class Page(models.Model):
     safe_filename = models.CharField(max_length=255, default='Original file name not available')
     hrefs=models.TextField(null=True, blank=True)
     content = models.TextField(null=True, blank=True)
-    # parent = models.ForeignKey('self', related_name='children', on_delete=models.CASCADE, null=True, blank=True)
     parent_url = models.URLField(null=True, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
