@@ -59,34 +59,54 @@
         #message {
             display: none;
             color: #333;
-            margin-top: 20px;
+            margin-top: 10px;
         }
     </style>
     <link rel="icon" type="image/x-icon" href="{% static 'scraper_icon.png' %}"/>
 </head>
 <body>
     <div class="container">
-        <script>
+        <script type="module">
+            import { nanoid } from 'https://cdn.jsdelivr.net/npm/nanoid@3/nanoid.js';
+        
             function generate_user_id() {
-                return nanoid();
+                const id = nanoid();
+                return id;
             }
 
+            function getCSRFToken() {
+                let csrfToken = null;
+                const cookies = document.cookie.split(';');
+                for (let cookie of cookies) {
+                    const [key, value] = cookie.trim().split('=');
+                    if (key === 'csrftoken') {
+                        csrfToken = value;
+                        break;
+                    }
+                }
+                return csrfToken;
+            }
+        
             var user_id = localStorage.getItem('scraper_user_id');
+
+            console.log("After getting local storage", user_id)
             if (!user_id) {
                 user_id = generate_user_id();
                 localStorage.setItem('scraper_user_id', user_id);
             }
+            console.log("After ensuring", user_id)
 
-            if (user_id) {
-                $.ajax({
-                    url: '/scraper/verify_user_id/',
-                    type: 'POST',
-                    data: {
-                        'scraper_user_id': user_id,
-                        'csrfmiddlewaretoken': '{{ csrf_token }}'
-                    }
-                });
-            }
+            fetch('/scraper/verify_user_id/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify({ 'scraper_user_id': user_id })
+            }).then(response => response.json())
+            .then(data => console.log(data))
+            .catch(error => console.error('Error:', error));
+
         </script>
         <img src="{% static 'scraper_logo.png' %}" class="logo">
         <p>Enter a URL below to download its content.</p>

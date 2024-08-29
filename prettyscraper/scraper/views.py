@@ -46,7 +46,9 @@ def verify_user_id(request):
     '''
 
     # Get user ID. 
-    user_id = request.POST.get('scraper_user_id')
+    data = json.loads(request.body)
+    user_id = data.get('scraper_user_id')
+    # user_id = request.session['scraper_user_id']
     print(f'In verify_user_id, we got the ID {user_id}')
     if not user_id:
         return JsonResponse({'status': 'error', 'message': 'No User ID provided'})
@@ -59,7 +61,7 @@ def verify_user_id(request):
             return JsonResponse({'status': 'error', 'message': e})
     
     request.session['scraper_user_id'] = user_id
-    return JsonResponse({'status': 'success', 'message': 'User already exists', 'user_id': user_id})
+    return JsonResponse({'status': 'success', 'message': 'User here', 'user_id': user_id})
         
 def validate_url(url):
     '''
