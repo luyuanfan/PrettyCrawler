@@ -10,7 +10,7 @@
     <!-- <script src="https://cdn.jsdelivr.net/npm/nanoid/nanoid.js"></script> -->
     <script src="https://unpkg.com/nanoid@3/dist/nanoid.umd.js"></script>
 
-    <title>Pretty Scraper - Home</title>
+    <title>Pretty Scraper</title>
     <style>
         body {
             background-color: #e5e1ca;
@@ -57,8 +57,8 @@
         <h1>Scraper</h1>
         <!-- <img src="/static/scraper_logo.png"> -->
         <img src="{% static 'scraper_logo.png' %}" class="logo">
-        <p>Enter a URL below to download its content!</p>
-        <p>You might also want to download webpages linked to the one you entered. Specify a depth.</p>
+        <p>Enter a URL below to download its content.</p>
+        <p>You might also want to specify a depth to download the content along with linked pages.</p>
         <form method="POST" action="/scraper/scrape/">
             {% csrf_token %}
             <!-- <input type="text" name="input_url" placeholder="Put a link here..." required> -->
@@ -84,11 +84,14 @@
         <script>
             document.addEventListener('DOMContentLoaded', function() {
                 const filesReady = "{{ request.session.files_ready | default:'False' }}";
+                const messageDiv = document.getElementById('message');
+
                 if (filesReady === 'True') {
-                    document.getElementById('message').style.display = 'block';
-                }
-                else {
-                    document.getElementById('message').style.display = 'none';
+                    messageDiv.style.display = 'block';
+                    formDiv.style.display = 'block';
+                } else {
+                    messageDiv.style.display = 'none';
+                    formDiv.style.display = 'none';
                 }
             });
         </script>

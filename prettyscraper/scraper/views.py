@@ -19,6 +19,7 @@ from django.contrib import messages
 from django.contrib.auth.models import User
 from django.urls import path
 from django.template.loader import get_template
+from django.db import transaction
 
 # Imports from elsewhere
 from bs4 import BeautifulSoup
@@ -115,7 +116,8 @@ def is_absolute(link):
     '''
     return bool(urlparse(link).netloc)
 
-def get_and_store_page_content(request, url, parent):
+@transaction.atomic
+def get_and_store_page_content(request, url, parent_url):
     '''
     Creates Page objects that represents content on one webpage.
     Args:
@@ -166,15 +168,15 @@ def get_and_store_page_content(request, url, parent):
         url=url,
         title=title,
         safe_filename=safe_filename,
-        hrefs=str(hrefs), 
+        hrefs=hrefs, 
         content=str(soup),
-        parent=parent
+        parent_url=parent_url
     )
 
-    print(f'saved page {page.safe_filename} in database! url: {page.url}, parent: {page.parent}')
+    print(f'saved page {page.safe_filename} in database! url: {page.url}, parent: {page.parent_url}')
     return page, hrefs
 
-def recursive_scrape(request, base, url, max_depth, curr_depth, parent):
+def recursive_scrape(request, base, url, max_depth, curr_depth, parent_url):
     '''
     This function recursively get page content from a URL.
     It should collect to all URL present a current page and traverse to those links.
@@ -190,7 +192,7 @@ def recursive_scrape(request, base, url, max_depth, curr_depth, parent):
         return True
 
     # Get main page contents and all URL it links to, it is also stored in database.
-    page, hrefs = get_and_store_page_content(request, url, parent)
+    page, hrefs = get_and_store_page_content(request, url, parent_url)
     if not page:
         print('Alert! get page returned none from get and store page')
         return False
@@ -204,11 +206,12 @@ def recursive_scrape(request, base, url, max_depth, curr_depth, parent):
                 link = get_absolute_url(base, link)
                 print(f'absolute link {link}')
             # Here we can set the current Page object as the parent of the next one.
-            ret = recursive_scrape(request, base, link, max_depth, curr_depth + 1, page)
+            ret = recursive_scrape(request, base, link, max_depth, curr_depth + 1, page.url)
     else:
         print("ALERT: we end at current level")
     return True
         
+@transaction.atomic
 def scrape(request):
     '''
     Handles scrape requests.
@@ -258,17 +261,19 @@ def retrieve_all_pages(user_id, root_url):
     '''
 
     print(f"Retrieving pages for user ID: {user_id} with root URL: {root_url}")
+
     # Get root page. 
-    root_page = Page.objects.filter(user_id=user_id, url=root_url, parent__isnull=True).first()
+    root_page = Page.objects.filter(user_id=user_id, url=root_url, parent_url__isnull=True).first()
     if not root_page:
         print(f"ALERT: No root page found in the database for URL {root_url}")
-        return [], []
+        return None, []
     
     print(f"Root page found: {root_page}")
     # Get not only the direct children but grandchildren pages, etc. 
     pages = root_page.get_all_children()
     if not pages:
         print(f'There is no pages associated with this root page.')
+
     print(f"Total pages linked to root page (including all descendants): {len(pages)}")
     for page in pages:
         print(f"Linked page: {page.title} at {page.url}")
@@ -296,6 +301,12 @@ def download(request):
 
         # Retrieve all files associated with this user ID and root_file URL. 
         root_page, all_pages = retrieve_all_pages(user_id, root_url)
+        if not root_page:
+            print('@@@@@@@@1@@@@@@@@')
+        if not all_pages[1:]:
+            print('@@@@@@@@2@@@@@@@@')
+        
+        print('@@@@@@@@3@@@@@@@@')
         
         # Get download type from session. 
         download_type = request.POST.get('download_type')
@@ -325,6 +336,7 @@ def download(request):
                 zf.writestr(filename, content)
         
         request.session['files_ready'] = False
+        render(request, 'home.html')
         return response
 
     else:

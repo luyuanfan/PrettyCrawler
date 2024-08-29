@@ -13,14 +13,15 @@ class Page(models.Model):
     safe_filename = models.CharField(max_length=255, default='Original file name not available')
     hrefs=models.TextField(null=True, blank=True)
     content = models.TextField(null=True, blank=True)
-    parent = models.ForeignKey('self', related_name='linked_pages', on_delete=models.CASCADE, null=True, blank=True)
+    # parent = models.ForeignKey('self', related_name='children', on_delete=models.CASCADE, null=True, blank=True)
+    parent_url = models.URLField(null=True, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f'{self.safe_filename} ({self.url})'
 
     @classmethod
-    def create(cls, user_id, url, title, safe_filename, hrefs, content, parent):
+    def create(cls, user_id, url, title, safe_filename, hrefs, content, parent_url):
         page = cls(
             user_id=user_id,
             url=url,
@@ -28,9 +29,10 @@ class Page(models.Model):
             safe_filename=safe_filename,
             hrefs=json.dumps(hrefs),
             content=content,
-            parent=parent
+            parent_url=parent_url
         )
         page.save()
+        page.refresh_from_db()
         return page
     
     def get_all_children(self):
@@ -38,14 +40,4 @@ class Page(models.Model):
         Recursively retrieves all descendant pages.
         Returns a list of Page instances.
         """
-        all_pages = []
-        children = Page.objects.filter(parent=self)
-
-        print(f'Found {len(children)} children for page {self.url}')
-
-        for child in children:
-            print(f'Processing child page: {child.url}')
-            all_pages.append(child)
-            all_pages.extend(child.get_all_children())
-
-        return all_pages
+        return list(Page.objects.filter(user_id=self.user_id, parent_url=self.url))
